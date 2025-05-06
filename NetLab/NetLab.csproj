@@ -1,0 +1,44 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <CompressionEnabled>false</CompressionEnabled>
+    <TargetFramework>net8.0-browser</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ICSharpCode.Decompiler" Version="9.0.0.7889" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="8.0.14" IsImplicitlyDefined="true" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="8.0.14" PrivateAssets="all" IsImplicitlyDefined="true" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="4.13.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.VisualBasic.Features" Version="4.13.0" />
+    <PackageReference Include="Mobius.ILasm" Version="0.1.0" />
+    <PackageReference Include="System.Security.Permissions" Version="9.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <TrimmerRootAssembly Include="System.Runtime" />
+    <TrimmerRootAssembly Include="System.Console" />
+    <TrimmerRootAssembly Include="System.Text.RegularExpressions" />
+    <TrimmerRootAssembly Include="System.Linq" />
+    <TrimmerRootAssembly Include="System.Linq.Expressions" />
+    <TrimmerRootAssembly Include="System.Net.Primitives" />
+    <TrimmerRootAssembly Include="System.Net.Http" />
+    <TrimmerRootAssembly Include="System.Private.Uri" />
+    <TrimmerRootAssembly Include="System.ComponentModel.Primitives" />
+    <TrimmerRootAssembly Include="System.Collections.Concurrent" />
+    <TrimmerRootAssembly Include="System.Collections.NonGeneric" />
+    <TrimmerRootAssembly Include="Microsoft.CSharp" />
+    <TrimmerRootAssembly Include="Microsoft.VisualBasic.Core" />
+    <TrimmerRootAssembly Include="System.Net.WebClient" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="wwwroot\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

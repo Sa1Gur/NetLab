@@ -1,0 +1,10 @@
+<Project>
+  <PropertyGroup>
+    <Authors>Sa1Gur</Authors>
+    <Description>.NET language playground on WASM</Description>
+    <LangVersion>latest</LangVersion>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>True</PublishRepositoryUrl>
+    <RepositoryUrl>https://github.com/</RepositoryUrl>
+  </PropertyGroup>
+</Project>
