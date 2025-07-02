@@ -165,6 +165,7 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
                 "System.Private.Uri",
                 "System.ComponentModel.Primitives",
                 "System.Collections.Concurrent",
+                "System.Collections.Generic",
                 "System.Collections.NonGeneric",
                 "Microsoft.CSharp",
                 "Microsoft.VisualBasic.Core",
