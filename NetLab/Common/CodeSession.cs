@@ -158,7 +158,6 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
                 "System.Runtime",
                 "System.Console",
                 "System.Collections",
-                "System.Collections.Specialized",
                 "System.Linq").ConfigureAwait(false);
         }
     }

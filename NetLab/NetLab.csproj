@@ -28,8 +28,7 @@
     <TrimmerRootAssembly Include="System.Net.Http" />
     <TrimmerRootAssembly Include="System.Private.Uri" />
     <TrimmerRootAssembly Include="System.ComponentModel.Primitives" />
-    <TrimmerRootAssembly Include="System.Collections.Concurrent" />
-    <TrimmerRootAssembly Include="System.Collections.NonGeneric" />
+    <TrimmerRootAssembly Include="System.Collections" />
     <TrimmerRootAssembly Include="Microsoft.CSharp" />
     <TrimmerRootAssembly Include="Microsoft.VisualBasic.Core" />
     <TrimmerRootAssembly Include="System.Net.WebClient" />
