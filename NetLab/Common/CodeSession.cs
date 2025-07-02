@@ -154,22 +154,11 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
         if (References?.Count is not > 0)
         {
             References = await GetMetadataReferencesAsync(
-                "System.Runtime",
                 "System.Private.CoreLib",
+                "System.Runtime",
                 "System.Console",
-                "System.Text.RegularExpressions",
-                "System.Linq",
-                "System.Linq.Expressions",
-                "System.Net.Primitives",
-                "System.Net.Http",
-                "System.Private.Uri",
-                "System.ComponentModel.Primitives",
-                "System.Collections.Concurrent",
-                "System.Collections.Generic",
-                "System.Collections.NonGeneric",
-                "Microsoft.CSharp",
-                "Microsoft.VisualBasic.Core",
-                "System.Net.WebClient").ConfigureAwait(false);
+                "System.Collections",
+                "System.Linq").ConfigureAwait(false);
         }
     }
 
