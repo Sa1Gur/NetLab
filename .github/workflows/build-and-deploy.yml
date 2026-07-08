@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  DOTNET_VERSION: '9.0.x'
+  DOTNET_VERSION: '10.0.x'
 
 jobs:
   build:
@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install .NET App
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@5
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
@@ -41,7 +41,7 @@ jobs:
         run: touch public/wwwroot/.nojekyll
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: public/wwwroot
 
