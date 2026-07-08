@@ -20,6 +20,9 @@ public partial class Program
     public static Task InitAsync(string baseUrl) => RoslynCodeSession.InitAsync(baseUrl).AsTask();
 
     [JSInvokable]
+    public static Task InitAsync(string baseUrl, IDictionary<string, string> assemblyUrls) => RoslynCodeSession.InitAsync(baseUrl, assemblyUrls).AsTask();
+
+    [JSInvokable]
     public static Task<CompileResult> ProcessAsync(string code) => Compiler.ProcessAsync(code).AsTask();
 
     [JSInvokable]

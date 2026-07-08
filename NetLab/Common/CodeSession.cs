@@ -31,6 +31,7 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
 {
     private static readonly SourceText EmptySourceText = SourceText.From(string.Empty);
     private static string _baseUrl;
+    private static IDictionary<string, string> _assemblyUrls;
 
     private readonly Dictionary<string, List<CodeFixProvider>> _providers;
     private readonly ImmutableArray<DiagnosticAnalyzer> _analyzers;
@@ -151,6 +152,21 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
     public static async ValueTask InitAsync(string baseUrl)
     {
         _baseUrl = baseUrl;
+        if (References?.Count is not > 0)
+        {
+            References = await GetMetadataReferencesAsync(
+                "System.Private.CoreLib",
+                "System.Runtime",
+                "System.Console",
+                "System.Collections",
+                "System.Linq").ConfigureAwait(false);
+        }
+    }
+
+    public static async ValueTask InitAsync(string baseUrl, IDictionary<string, string> assemblyUrls)
+    {
+        _baseUrl = baseUrl;
+        _assemblyUrls = assemblyUrls;
         if (References?.Count is not > 0)
         {
             References = await GetMetadataReferencesAsync(
@@ -318,7 +334,10 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
 
         await Parallel.ForEachAsync(assemblies, parallelOptions, async (assembly, token) =>
         {
-            using Stream stream = await client.GetStreamAsync($"{assembly}.wasm", token).ConfigureAwait(false);
+            string path = _assemblyUrls is not null && _assemblyUrls.TryGetValue(assembly, out string url) && !string.IsNullOrEmpty(url)
+                ? url
+                : $"{assembly}.wasm";
+            using Stream stream = await client.GetStreamAsync(path, token).ConfigureAwait(false);
             byte[] array = await WebcilConverterUtil.ConvertFromWebcilAsync(stream).ConfigureAwait(false);
             concurrentReferences.Add(MetadataReference.CreateFromImage(array));
         });

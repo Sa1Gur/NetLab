@@ -388,10 +388,33 @@
                         await this.initDotNetAsync();
                         const message = this.message;
                         this.message = "Downloading references...";
-                        await DotNet.invokeMethodAsync("NetLab", "InitAsync", new URL("_framework/", document.baseURI));
+                        const baseUrl = new URL("_framework/", document.baseURI);
+                        const assemblyUrls = this.getAssemblyUrls();
+                        await DotNet.invokeMethodAsync("NetLab", "InitAsync", baseUrl.href, assemblyUrls);
                         this.message = message;
                         this.isInitCompiler = true;
                     }
+                },
+                getAssemblyUrls() {
+                    const urls = {};
+                    try {
+                        const runtime = Blazor.runtime;
+                        const config = runtime?.module?.config ?? runtime?.INTERNAL?.module?.config ?? runtime?.config;
+                        const resources = config?.resources?.assembly;
+                        if (Array.isArray(resources)) {
+                            for (const res of resources) {
+                                if (res?.name) {
+                                    const match = res.name.match(/^(.+)\.[a-z0-9]{10}\.wasm$/i);
+                                    if (match) {
+                                        urls[match[1]] = res.name;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Could not resolve assembly URLs from runtime config", e);
+                    }
+                    return urls;
                 },
                 initEditer() {
                     const editorHost = this.$refs.editor;
