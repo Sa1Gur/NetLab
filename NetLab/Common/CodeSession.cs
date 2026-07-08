@@ -338,7 +338,10 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
                 ? url
                 : $"{assembly}.wasm";
             using Stream stream = await client.GetStreamAsync(path, token).ConfigureAwait(false);
-            byte[] array = await WebcilConverterUtil.ConvertFromWebcilAsync(stream).ConfigureAwait(false);
+            using MemoryStream buffered = new();
+            await stream.CopyToAsync(buffered, token).ConfigureAwait(false);
+            buffered.Position = 0;
+            byte[] array = await WebcilConverterUtil.ConvertFromWebcilAsync(buffered).ConfigureAwait(false);
             concurrentReferences.Add(MetadataReference.CreateFromImage(array));
         });
 

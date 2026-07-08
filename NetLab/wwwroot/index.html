@@ -160,6 +160,8 @@
         import { basicSetup, EditorView } from "codemirror";
         import { autocompletion, ifNotIn } from "@codemirror/autocomplete";
         import { indentWithTab } from "@codemirror/commands";
+        window.netLabRef = null;
+        window.initNetLab = function(ref) { window.netLabRef = ref; };
         import { Compartment, EditorState, Facet } from "@codemirror/state";
         import { indentUnit } from "@codemirror/language";
         import { linter, lintGutter } from "@codemirror/lint";
@@ -220,8 +222,8 @@
                                 this.code = this.getDefaultCode(newValue);
                             }
                             await this.initDotNetAsync();
-                            await DotNet.invokeMethodAsync("NetLab", "SetLanguageType", newValue);
-                            this.inputLanguages = await DotNet.invokeMethodAsync("NetLab", "GetInputLanguageVersions");
+                            await window.netLabRef.invokeMethodAsync("SetLanguageType", newValue);
+                            this.inputLanguages = await window.netLabRef.invokeMethodAsync("GetInputLanguageVersions");
                             this.message = message;
                         }
                         catch (e) {
@@ -242,7 +244,7 @@
                             const message = this.message;
                             this.message = "Changing version...";
                             await this.initDotNetAsync();
-                            await DotNet.invokeMethodAsync("NetLab", "SetInputLanguageVersion", newValue);
+                            await window.netLabRef.invokeMethodAsync("SetInputLanguageVersion", newValue);
                             this.message = message;
                         }
                         catch (e) {
@@ -263,8 +265,8 @@
                             const message = this.message;
                             this.message = "Changing output...";
                             await this.initDotNetAsync();
-                            await DotNet.invokeMethodAsync("NetLab", "SetOutputType", newValue);
-                            this.outputLanguages = await DotNet.invokeMethodAsync("NetLab", "GetOutputLanguageVersions");
+                            await window.netLabRef.invokeMethodAsync("SetOutputType", newValue);
+                            this.outputLanguages = await window.netLabRef.invokeMethodAsync("GetOutputLanguageVersions");
                             this.message = message;
                         }
                         catch (e) {
@@ -285,7 +287,7 @@
                             const message = this.message;
                             this.message = "Changing version...";
                             await this.initDotNetAsync();
-                            await DotNet.invokeMethodAsync("NetLab", "SetOutputLanguageVersion", newValue);
+                            await window.netLabRef.invokeMethodAsync("SetOutputLanguageVersion", newValue);
                             this.message = message;
                         }
                         catch (e) {
@@ -310,7 +312,7 @@
                         await (this.language === "IL" ? this.initDotNetAsync() : this.initCompilerAsync());
                         this.initEditer();
                         await this.$nextTick();
-                        this.results = await DotNet.invokeMethodAsync("NetLab", "ProcessAsync", this.code);
+                        this.results = await window.netLabRef.invokeMethodAsync("ProcessAsync", this.code);
                         this.message = message;
                     }
                     catch (e) {
@@ -332,7 +334,7 @@
                 },
                 async getDiagnosticsAsync(code) {
                     try {
-                        return await DotNet.invokeMethodAsync("NetLab", "GetDiagnosticsAsync", code);
+                        return await window.netLabRef.invokeMethodAsync("GetDiagnosticsAsync", code);
                     }
                     catch (e) {
                         console.warn(e);
@@ -340,7 +342,7 @@
                 },
                 async getCompletionsAsync(code, position) {
                     try {
-                        return await DotNet.invokeMethodAsync("NetLab", "GetCompletionsAsync", code, position);
+                        return await window.netLabRef.invokeMethodAsync("GetCompletionsAsync", code, position);
                     }
                     catch (e) {
                         console.warn(e);
@@ -348,7 +350,7 @@
                 },
                 async getInfoTipAsync(code, position) {
                     try {
-                        return await DotNet.invokeMethodAsync("NetLab", "GetInfoTipAsync", code, position);
+                        return await window.netLabRef.invokeMethodAsync("GetInfoTipAsync", code, position);
                     }
                     catch (e) {
                         console.warn(e);
@@ -378,6 +380,9 @@
                         if (!this.isInitDotnet) {
                             await Blazor.start();
                         }
+                        while (!window.netLabRef) {
+                            await new Promise(r => setTimeout(r, 50));
+                        }
                         this.locker.release();
                         this.message = message;
                         this.isInitDotnet = true;
@@ -390,7 +395,7 @@
                         this.message = "Downloading references...";
                         const baseUrl = new URL("_framework/", document.baseURI);
                         const assemblyUrls = this.getAssemblyUrls();
-                        await DotNet.invokeMethodAsync("NetLab", "InitAsync", baseUrl.href, assemblyUrls);
+                        await window.netLabRef.invokeMethodAsync("InitWithUrlsAsync", baseUrl.href, assemblyUrls);
                         this.message = message;
                         this.isInitCompiler = true;
                     }

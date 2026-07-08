@@ -10,6 +10,8 @@ using System.Threading.Tasks;
 
 WebAssemblyHost current = WebAssemblyHostBuilder.CreateDefault(args).Build();
 Compiler = new Compiler(current.Services.GetRequiredService<ILoggerFactory>());
+await current.Services.GetRequiredService<IJSRuntime>()
+    .InvokeVoidAsync("initNetLab", DotNetObjectReference.Create(new Program()));
 await current.RunAsync();
 
 public partial class Program
@@ -17,37 +19,37 @@ public partial class Program
     private static Compiler Compiler { get; set; }
 
     [JSInvokable]
-    public static Task InitAsync(string baseUrl) => RoslynCodeSession.InitAsync(baseUrl).AsTask();
+    public Task InitAsync(string baseUrl) => RoslynCodeSession.InitAsync(baseUrl).AsTask();
+
+    [JSInvokable("InitWithUrlsAsync")]
+    public Task InitAsync(string baseUrl, IDictionary<string, string> assemblyUrls) => RoslynCodeSession.InitAsync(baseUrl, assemblyUrls).AsTask();
 
     [JSInvokable]
-    public static Task InitAsync(string baseUrl, IDictionary<string, string> assemblyUrls) => RoslynCodeSession.InitAsync(baseUrl, assemblyUrls).AsTask();
+    public Task<CompileResult> ProcessAsync(string code) => Compiler.ProcessAsync(code).AsTask();
 
     [JSInvokable]
-    public static Task<CompileResult> ProcessAsync(string code) => Compiler.ProcessAsync(code).AsTask();
+    public Task<List<Diagnostic>> GetDiagnosticsAsync(string code) => Compiler.GetDiagnosticsAsync(code).AsTask();
 
     [JSInvokable]
-    public static Task<List<Diagnostic>> GetDiagnosticsAsync(string code) => Compiler.GetDiagnosticsAsync(code).AsTask();
+    public Task<IEnumerable<CompletionItem>> GetCompletionsAsync(string code, int position) => Compiler.GetCompletionsAsync(code, position).AsTask();
 
     [JSInvokable]
-    public static Task<IEnumerable<CompletionItem>> GetCompletionsAsync(string code, int position) => Compiler.GetCompletionsAsync(code, position).AsTask();
+    public Task<InfoTipItem> GetInfoTipAsync(string code, int position) => Compiler.GetInfoTipAsync(code, position).AsTask();
 
     [JSInvokable]
-    public static Task<InfoTipItem> GetInfoTipAsync(string code, int position) => Compiler.GetInfoTipAsync(code, position).AsTask();
+    public IEnumerable<string> GetLanguageTypes() => Compiler.LanguageTypes.Select(x => x.ToString());
 
     [JSInvokable]
-    public static IEnumerable<string> GetLanguageTypes() => Compiler.LanguageTypes.Select(x => x.ToString());
+    public void SetLanguageType(string type) => Compiler.LanguageType = Enum.Parse<LanguageType>(type, true);
 
     [JSInvokable]
-    public static void SetLanguageType(string type) => Compiler.LanguageType = Enum.Parse<LanguageType>(type, true);
+    public IEnumerable<string> GetOutputTypes() => Compiler.OutputTypes.Select(x => x.ToString());
 
     [JSInvokable]
-    public static IEnumerable<string> GetOutputTypes() => Compiler.OutputTypes.Select(x => x.ToString());
+    public void SetOutputType(string type) => Compiler.OutputType = Enum.Parse<OutputType>(type, true);
 
     [JSInvokable]
-    public static void SetOutputType(string type) => Compiler.OutputType = Enum.Parse<OutputType>(type, true);
-
-    [JSInvokable]
-    public static IEnumerable<string> GetInputLanguageVersions()
+    public IEnumerable<string> GetInputLanguageVersions()
     {
         if (((IInputOptions)Compiler.InputOptions).LanguageVersions is not Array array) yield break;
 
@@ -58,7 +60,7 @@ public partial class Program
     }
 
     [JSInvokable]
-    public static void SetInputLanguageVersion(string type)
+    public void SetInputLanguageVersion(string type)
     {
         if (((IInputOptions)Compiler.InputOptions).LanguageVersion?.GetType() is Type @enum)
         {
@@ -67,7 +69,7 @@ public partial class Program
     }
 
     [JSInvokable]
-    public static IEnumerable<string> GetOutputLanguageVersions()
+    public IEnumerable<string> GetOutputLanguageVersions()
     {
         if (!((IOutputOptions)Compiler.OutputOptions).IsCSharp) yield break;
 
@@ -78,7 +80,7 @@ public partial class Program
     }
 
     [JSInvokable]
-    public static void SetOutputLanguageVersion(string type)
+    public void SetOutputLanguageVersion(string type)
     {
         if (((IOutputOptions)Compiler.OutputOptions).LanguageVersion?.GetType() is Type @enum)
         {
