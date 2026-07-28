@@ -34,7 +34,6 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
     private static IDictionary<string, string> _assemblyUrls;
 
     private readonly Dictionary<string, List<CodeFixProvider>> _providers;
-    private readonly ImmutableArray<DiagnosticAnalyzer> _analyzers;
     private readonly RoslynOptions _options;
     private readonly string _language;
     private readonly bool _isConsole;
@@ -145,8 +144,7 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
             LanguageNames.CSharp => "Microsoft.CodeAnalysis.CSharp.Features",
             LanguageNames.VisualBasic => "Microsoft.CodeAnalysis.VisualBasic.Features",
             _ => throw new NotSupportedException($"Language '{_language}' is not supported.")
-        }, _language, out IEnumerable<DiagnosticAnalyzer> analyzers, out _providers);
-        _analyzers = [.. analyzers];
+        }, _language, out _, out _providers);
     }
 
     public static async ValueTask InitAsync(string baseUrl)
@@ -180,9 +178,22 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
 
     private void EnsureUpToDate()
     {
-        if (!_outOfDate) { return; }
-        _currentDocument = _currentDocument.WithText(SourceText);
-        _ = Workspace.TryApplyChanges(_currentDocument.Project.Solution);
+        bool referencesOutOfDate = References.Count > 0
+            && _currentDocument.Project.MetadataReferences.Count() != References.Count;
+        if (!_outOfDate && !referencesOutOfDate) { return; }
+
+        Solution solution = _currentDocument.Project.Solution;
+        if (referencesOutOfDate)
+        {
+            solution = solution.WithProjectMetadataReferences(_currentDocument.Project.Id, References);
+        }
+        Document document = solution.GetDocument(_currentDocument.Id);
+        if (_outOfDate)
+        {
+            document = document.WithText(SourceText);
+        }
+        _ = Workspace.TryApplyChanges(document.Project.Solution);
+        _currentDocument = Workspace.CurrentSolution.GetDocument(_currentDocument.Id);
         _outOfDate = false;
     }
 
@@ -202,12 +213,15 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
     public async ValueTask<T> GetDiagnosticsAsync<T>(T results, CancellationToken cancellationToken = default) where T : ICollection<Diagnostic>
     {
         Compilation compilation = await CurrentDocument.Project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
-        ImmutableArray<RoslynDiagnostic> diagnostics = await compilation.WithAnalyzers(_analyzers).GetAllDiagnosticsAsync(cancellationToken).ConfigureAwait(false);
+        // AnalyzerDriver checks hidden source regions through Roslyn's generic
+        // LineDirectiveMap implementation, which is not safe under WASM AOT.
+        ImmutableArray<RoslynDiagnostic> diagnostics = compilation.GetDiagnostics(cancellationToken);
         IEnumerable<RoslynDiagnostic> filtered = !_isConsole && _options is CSharpInputOptions { LanguageVersion: >= CSharpLanguageVersion.CSharp9 } ? diagnostics.Where(x => x is not { Id: "CS8805", Severity: DiagnosticSeverity.Error }) : diagnostics;
         foreach (RoslynDiagnostic diagnostic in filtered)
         {
-            List<RoslynCodeAction> actions = await GetCodeActionsAsync(diagnostic, cancellationToken).ConfigureAwait(false);
-            results.Add(new Diagnostic(diagnostic, [.. actions.Select(x => new CodeAction(x, this))]));
+            // Creating code actions eagerly invokes AddImportFeatureService, whose
+            // hidden-region check reaches the same unsupported WASM AOT generic path.
+            results.Add(new Diagnostic(diagnostic));
         }
         return results;
     }
@@ -295,14 +309,14 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
     public async ValueTask<CompilationResults> Compile(ICollection<Diagnostic> results, CancellationToken cancellationToken = default)
     {
         MemoryStream assemblyStream = new();
-        MemoryStream symbolStream = new();
         Compilation compilation = await CurrentDocument.Project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
-        EmitResult emitResult = compilation.Emit(assemblyStream, symbolStream, cancellationToken: cancellationToken);
+        // The decompilers do not consume PDB data. Avoiding PDB emission also keeps
+        // Roslyn out of its generic line-directive map path, which is not safe under WASM AOT.
+        EmitResult emitResult = compilation.Emit(assemblyStream, cancellationToken: cancellationToken);
         if (emitResult.Success)
         {
             _ = assemblyStream.Seek(0, SeekOrigin.Begin);
-            _ = symbolStream.Seek(0, SeekOrigin.Begin);
-            return new CompilationResults(assemblyStream, symbolStream);
+            return new CompilationResults(assemblyStream, null);
         }
         else
         {
@@ -320,34 +334,20 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
 
     private static async ValueTask<List<MetadataReference>> GetMetadataReferencesAsync(params string[] assemblies)
     {
-        List<MetadataReference> references = [];
         using HttpClient client = new() { BaseAddress = new Uri(_baseUrl) };
-
-        // Use ConcurrentBag to safely collect results from multiple threads
-        var concurrentReferences = new System.Collections.Concurrent.ConcurrentBag<MetadataReference>();
-
-        // Use Parallel.ForEachAsync with a configurable degree of parallelism
-        var parallelOptions = new ParallelOptions
-        {
-            MaxDegreeOfParallelism = Environment.ProcessorCount
-        };
-
-        await Parallel.ForEachAsync(assemblies, parallelOptions, async (assembly, token) =>
+        List<MetadataReference> references = new(assemblies.Length);
+        foreach (string assembly in assemblies)
         {
             string path = _assemblyUrls is not null && _assemblyUrls.TryGetValue(assembly, out string url) && !string.IsNullOrEmpty(url)
                 ? url
                 : $"{assembly}.wasm";
-            using Stream stream = await client.GetStreamAsync(path, token).ConfigureAwait(false);
+            using Stream stream = await client.GetStreamAsync(path).ConfigureAwait(false);
             using MemoryStream buffered = new();
-            await stream.CopyToAsync(buffered, token).ConfigureAwait(false);
+            await stream.CopyToAsync(buffered).ConfigureAwait(false);
             buffered.Position = 0;
             byte[] array = await WebcilConverterUtil.ConvertFromWebcilAsync(buffered).ConfigureAwait(false);
-            concurrentReferences.Add(MetadataReference.CreateFromImage(array));
-        });
-
-        // Add all collected references to the result list
-        references.AddRange(concurrentReferences);
-
+            references.Add(MetadataReference.CreateFromImage(array));
+        }
         return references;
     }
 

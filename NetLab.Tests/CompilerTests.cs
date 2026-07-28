@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using NetLab.Common;
+using System.Reflection;
 
 namespace NetLab.Tests;
 
@@ -56,6 +57,42 @@ public class CompilerTests
         // Assert
         Assert.Equal(OutputType.CSharp, compiler.OutputType);
         Assert.IsType<CSharpOutputOptions>(compiler.OutputOptions);
+    }
+
+    [Fact]
+    public void OutputType_WhenConsoleKindChanges_RecreatesCodeSession()
+    {
+        // Arrange
+        Compiler compiler = new Compiler(_mockLoggerFactory.Object);
+        ICodeSession<ICodeSession> runSession = compiler.CodeSession;
+
+        // Act
+        compiler.OutputType = OutputType.IL;
+        ICodeSession<ICodeSession> ilSession = compiler.CodeSession;
+        compiler.OutputType = OutputType.CSharp;
+
+        // Assert
+        Assert.NotSame(runSession, ilSession);
+        Assert.Same(ilSession, compiler.CodeSession);
+    }
+
+    [Fact]
+    public async Task ILDecompileAsync_WithValidAssembly_ReturnsIL()
+    {
+        // Arrange
+        string assemblyPath = Assembly.GetExecutingAssembly().Location;
+        await using FileStream file = File.OpenRead(assemblyPath);
+        MemoryStream assemblyStream = new();
+        await file.CopyToAsync(assemblyStream);
+        assemblyStream.Position = 0;
+        using CompilationResults streams = new(assemblyStream, null);
+
+        // Act
+        string result = await Decompiler.ILDecompileAsync(streams);
+
+        // Assert
+        Assert.Contains(".assembly", result);
+        Assert.Contains(".class", result);
     }
 
     [Fact(Skip = "Requires WebAssembly runtime")]

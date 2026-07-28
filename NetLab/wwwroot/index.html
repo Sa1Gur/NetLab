@@ -80,43 +80,52 @@
     <div id="vue-app">
         <div class="split-view">
             <div class="split-content" style="display: flex; flex-direction: column; row-gap: 4px; padding: 4px;">
-                <div style="display: flex; justify-content: space-between; column-gap: 4px;">
-                    <fluent-select v-model="language" style="min-width: auto;">
-                        <fluent-option value="CSharp">C#</fluent-option>
-                        <fluent-option value="VisualBasic">VB</fluent-option>
-                        <fluent-option value="IL">IL</fluent-option>
-                    </fluent-select>
-                    <div style="display: flex; column-gap: 4px;">
-                        <fluent-button @click="processAsync" :disabled="loading">
-                            <fluent-progress-ring v-if="loading" slot="start"
-                                                  style="width: 12px; height: 12px;"></fluent-progress-ring>
-                            <span>{{ message }}</span>
-                        </fluent-button>
-                        <fluent-select v-if="inputLanguages.length" v-model="inputLanguage" style="min-width: auto;">
-                            <fluent-option v-for="item in inputLanguages" :value="item">
-                                {{ getVersion(item) }}
-                            </fluent-option>
+                <div class="editor-toolbar">
+                    <div class="select-field" title="Language used to parse and compile the source code.">
+                        <span class="select-label">Source language</span>
+                        <fluent-select class="toolbar-select" v-model="language" aria-label="Source language">
+                            <fluent-option value="CSharp">C#</fluent-option>
+                            <fluent-option value="VisualBasic">VB</fluent-option>
+                            <fluent-option value="IL">IL</fluent-option>
                         </fluent-select>
+                    </div>
+                    <div class="toolbar-actions">
+                        <div v-if="inputLanguages.length" class="select-field"
+                             title="Compiler language version used for the source code.">
+                            <span class="select-label">Source version</span>
+                            <fluent-select class="toolbar-select" v-model="inputLanguage" aria-label="Source language version">
+                                <fluent-option v-for="item in inputLanguages" :value="item">
+                                    {{ getVersion(item) }}
+                                </fluent-option>
+                            </fluent-select>
+                        </div>
                     </div>
                 </div>
                 <codemirror class="editor" v-model:value="code" :language="getLanguage()" ref="editor"></codemirror>
             </div>
             <div class="split-content" style="display: flex; flex-direction: column; row-gap: 4px; padding: 4px;">
-                <div style="display: flex; justify-content: space-between; column-gap: 4px;">
-                    <fluent-select v-model="output" style="min-width: auto;">
-                        <fluent-option value="CSharp">C#</fluent-option>
-                        <fluent-option value="IL">IL</fluent-option>
-                        <fluent-option value="Run">Run</fluent-option>
-                    </fluent-select>
-                    <div style="display: flex; column-gap: 4px;">
+                <div class="editor-toolbar">
+                    <div class="select-field" title="Choose decompiled C#, IL, or run the compiled program.">
+                        <span class="select-label">Result type</span>
+                        <fluent-select class="toolbar-select" v-model="output" :disabled="loading" aria-label="Result type">
+                            <fluent-option value="CSharp">C#</fluent-option>
+                            <fluent-option value="IL">IL</fluent-option>
+                            <fluent-option value="Run">Run</fluent-option>
+                        </fluent-select>
+                    </div>
+                    <div class="toolbar-actions">
                         <fluent-button v-if="!isInitDotnet" @click="initLinterAsync" :disabled="loading">
                             Init Linter
                         </fluent-button>
-                        <fluent-select v-if="outputLanguages.length" v-model="outputLanguage" style="min-width: auto;">
-                            <fluent-option v-for="item in outputLanguages" :value="item">
-                                {{ getVersion(item) }}
-                            </fluent-option>
-                        </fluent-select>
+                        <div v-if="outputLanguages.length" class="select-field"
+                             title="Maximum C# syntax version the decompiler may use. This does not change the compiled IL.">
+                            <span class="select-label">Decompiler syntax</span>
+                            <fluent-select class="toolbar-select" v-model="outputLanguage" aria-label="Decompiler C# syntax version">
+                                <fluent-option v-for="item in outputLanguages" :value="item">
+                                    {{ getVersion(item) }}
+                                </fluent-option>
+                            </fluent-select>
+                        </div>
                     </div>
                 </div>
                 <div class="editor">
@@ -125,14 +134,14 @@
                     <div v-if="results.outputs.length" style="font-family: var(--font-monospace); padding: 0 12px;">
                         <pre class="unset" v-for="item in results.outputs">{{ item }}</pre>
                     </div>
-                    <div v-if="results.diagnostics.length" style="font-family: var(--font-monospace); padding: 0 12px;">
+                    <div v-if="results.diagnostics.length" class="diagnostics">
                         <table cellpadding="4">
                             <thead>
                                 <tr>
-                                    <th></th>
-                                    <th>ID</th>
+                                    <th class="diagnostic-severity"></th>
+                                    <th class="diagnostic-id">ID</th>
                                     <th>Message</th>
-                                    <th>Location</th>
+                                    <th class="diagnostic-location">Location</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -148,7 +157,10 @@
                 </div>
             </div>
         </div>
-        <div class="loading-progress" v-if="!isInitDotnet"></div>
+        <div class="loading-progress-status" v-if="!isInitDotnet">
+            <span>{{ loadProgressText || message }}</span>
+            <div class="loading-progress" :style="{ width: loadProgress + '%' }"></div>
+        </div>
     </div>
 
     <template id="empty-template">
@@ -183,35 +195,26 @@
                     outputLanguage: "CSharp1",
                     isInitDotnet: false,
                     isInitCompiler: false,
+                    dotNetInitPromise: null,
+                    compilerInitPromise: null,
+                    loadProgress: 0,
+                    loadProgressText: "",
                     loading: false,
                     message: "Process",
+                    processTimer: null,
+                    processing: false,
+                    processPending: false,
                     results: {
                         diagnostics: [],
                         decompiled: null,
                         outputs: []
                     },
-                    locker: {
-                        resolves: [],
-                        reference: 0,
-                        async await() {
-                            return new Promise(resolve => {
-                                if (this.reference++ <= 0) {
-                                    resolve();
-                                }
-                                else {
-                                    this.resolves.push(resolve);
-                                }
-                            });
-                        },
-                        release() {
-                            if (--this.reference > 0) {
-                                this.resolves.pop()();
-                            }
-                        }
-                    }
                 }
             },
             watch: {
+                code() {
+                    this.scheduleProcess();
+                },
                 async language(newValue, oldValue) {
                     if (newValue !== oldValue) {
                         try {
@@ -221,7 +224,7 @@
                             if (this.code === this.getDefaultCode(oldValue)) {
                                 this.code = this.getDefaultCode(newValue);
                             }
-                            await this.initDotNetAsync();
+                            await (newValue === "IL" ? this.initDotNetAsync() : this.initCompilerAsync());
                             await window.netLabRef.invokeMethodAsync("SetLanguageType", newValue);
                             this.inputLanguages = await window.netLabRef.invokeMethodAsync("GetInputLanguageVersions");
                             this.message = message;
@@ -234,6 +237,7 @@
                         finally {
                             this.message = "Process";
                             this.loading = false;
+                            this.scheduleProcess(0);
                         }
                     }
                 },
@@ -255,6 +259,7 @@
                         finally {
                             this.message = "Process";
                             this.loading = false;
+                            this.scheduleProcess(0);
                         }
                     }
                 },
@@ -264,7 +269,7 @@
                             this.loading = true;
                             const message = this.message;
                             this.message = "Changing output...";
-                            await this.initDotNetAsync();
+                            await (this.language === "IL" ? this.initDotNetAsync() : this.initCompilerAsync());
                             await window.netLabRef.invokeMethodAsync("SetOutputType", newValue);
                             this.outputLanguages = await window.netLabRef.invokeMethodAsync("GetOutputLanguageVersions");
                             this.message = message;
@@ -277,6 +282,7 @@
                         finally {
                             this.message = "Process";
                             this.loading = false;
+                            this.scheduleProcess(0);
                         }
                     }
                 },
@@ -298,13 +304,23 @@
                         finally {
                             this.message = "Process";
                             this.loading = false;
+                            this.scheduleProcess(0);
                         }
                     }
                 }
             },
             methods: {
+                scheduleProcess(delay = 500) {
+                    clearTimeout(this.processTimer);
+                    this.processTimer = setTimeout(() => this.processAsync(), delay);
+                },
                 async processAsync() {
+                    if (this.processing || this.loading) {
+                        this.processPending = true;
+                        return;
+                    }
                     try {
+                        this.processing = true;
                         this.loading = true;
                         const message = this.message;
                         this.message = "Compiling...";
@@ -330,9 +346,17 @@
                     finally {
                         this.message = "Process";
                         this.loading = false;
+                        this.processing = false;
+                        if (this.processPending) {
+                            this.processPending = false;
+                            this.scheduleProcess(0);
+                        }
                     }
                 },
                 async getDiagnosticsAsync(code) {
+                    if (this.loading || this.processing) {
+                        return [];
+                    }
                     try {
                         return await window.netLabRef.invokeMethodAsync("GetDiagnosticsAsync", code);
                     }
@@ -341,6 +365,9 @@
                     }
                 },
                 async getCompletionsAsync(code, position) {
+                    if (this.loading || this.processing) {
+                        return [];
+                    }
                     try {
                         return await window.netLabRef.invokeMethodAsync("GetCompletionsAsync", code, position);
                     }
@@ -349,6 +376,9 @@
                     }
                 },
                 async getInfoTipAsync(code, position) {
+                    if (this.loading || this.processing) {
+                        return null;
+                    }
                     try {
                         return await window.netLabRef.invokeMethodAsync("GetInfoTipAsync", code, position);
                     }
@@ -373,32 +403,92 @@
                     }
                 },
                 async initDotNetAsync() {
-                    if (!this.isInitDotnet) {
+                    if (this.isInitDotnet) {
+                        return;
+                    }
+                    if (!this.dotNetInitPromise) {
                         const message = this.message;
                         this.message = "Loading .NET...";
-                        await this.locker.await();
-                        if (!this.isInitDotnet) {
-                            await Blazor.start();
-                        }
-                        while (!window.netLabRef) {
-                            await new Promise(r => setTimeout(r, 50));
-                        }
-                        this.locker.release();
-                        this.message = message;
-                        this.isInitDotnet = true;
+                        this.dotNetInitPromise = (async () => {
+                            await Blazor.start({
+                                loadBootResource: (type, name, defaultUri, integrity) =>
+                                    type === "dotnetwasm"
+                                        ? this.loadBootResourceWithProgress(name, defaultUri)
+                                        : null
+                            });
+                            while (!window.netLabRef) {
+                                await new Promise(r => setTimeout(r, 50));
+                            }
+                            this.loadProgress = 100;
+                            this.loadProgressText = "";
+                            this.isInitDotnet = true;
+                        })().finally(() => {
+                            this.message = message;
+                            if (!this.isInitDotnet) {
+                                this.dotNetInitPromise = null;
+                            }
+                        });
                     }
+                    await this.dotNetInitPromise;
+                },
+                async loadBootResourceWithProgress(name, defaultUri) {
+                    const response = await fetch(defaultUri, {
+                        cache: "no-cache"
+                    });
+                    if (!response.ok || !response.body) {
+                        return response;
+                    }
+
+                    const total = Number(response.headers.get("content-length")) || 0;
+                    let loaded = 0;
+                    const formatSize = bytes => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+                    const updateProgress = () => {
+                        this.loadProgress = total ? Math.min(100, loaded / total * 100) : 0;
+                        this.loadProgressText = total
+                            ? `Loading ${name}: ${formatSize(loaded)} / ${formatSize(total)} (${Math.floor(this.loadProgress)}%)`
+                            : `Loading ${name}: ${formatSize(loaded)}`;
+                    };
+                    updateProgress();
+
+                    const stream = response.body.pipeThrough(new TransformStream({
+                        transform: (chunk, controller) => {
+                            loaded += chunk.byteLength;
+                            updateProgress();
+                            controller.enqueue(chunk);
+                        },
+                        flush: () => {
+                            this.loadProgress = 100;
+                            this.loadProgressText = "Starting .NET...";
+                        }
+                    }));
+
+                    return new Response(stream, {
+                        status: response.status,
+                        statusText: response.statusText,
+                        headers: response.headers
+                    });
                 },
                 async initCompilerAsync() {
-                    if (!this.isInitCompiler) {
-                        await this.initDotNetAsync();
+                    if (this.isInitCompiler) {
+                        return;
+                    }
+                    if (!this.compilerInitPromise) {
                         const message = this.message;
                         this.message = "Downloading references...";
-                        const baseUrl = new URL("_framework/", document.baseURI);
-                        const assemblyUrls = this.getAssemblyUrls();
-                        await window.netLabRef.invokeMethodAsync("InitWithUrlsAsync", baseUrl.href, assemblyUrls);
-                        this.message = message;
-                        this.isInitCompiler = true;
+                        this.compilerInitPromise = (async () => {
+                            await this.initDotNetAsync();
+                            const baseUrl = new URL("_framework/", document.baseURI);
+                            const assemblyUrls = this.getAssemblyUrls();
+                            await window.netLabRef.invokeMethodAsync("InitWithUrlsAsync", baseUrl.href, assemblyUrls);
+                            this.isInitCompiler = true;
+                        })().finally(() => {
+                            this.message = message;
+                            if (!this.isInitCompiler) {
+                                this.compilerInitPromise = null;
+                            }
+                        });
                     }
+                    await this.compilerInitPromise;
                 },
                 getAssemblyUrls() {
                     const urls = {};
@@ -406,14 +496,22 @@
                         const runtime = Blazor.runtime;
                         const config = runtime?.module?.config ?? runtime?.INTERNAL?.module?.config ?? runtime?.config;
                         const resources = config?.resources?.assembly;
-                        if (Array.isArray(resources)) {
-                            for (const res of resources) {
-                                if (res?.name) {
-                                    const match = res.name.match(/^(.+)\.[a-z0-9]{10}\.wasm$/i);
-                                    if (match) {
-                                        urls[match[1]] = res.name;
-                                    }
-                                }
+                        const assemblies = [
+                            ...(Array.isArray(resources) ? resources : []),
+                            ...(Array.isArray(config?.resources?.coreAssembly) ? config.resources.coreAssembly : []),
+                            ...(Array.isArray(config?.assets) ? config.assets.filter(x => x?.behavior === "assembly") : [])
+                        ];
+                        for (const resource of assemblies) {
+                            if (!resource?.name) {
+                                continue;
+                            }
+                            if (resource.virtualPath?.endsWith(".wasm")) {
+                                urls[resource.virtualPath.slice(0, -5)] = resource.name;
+                                continue;
+                            }
+                            const match = resource.name.match(/^(.+)\.[a-z0-9]{10}\.wasm$/i);
+                            if (match) {
+                                urls[match[1]] = resource.name;
                             }
                         }
                     } catch (e) {
@@ -530,6 +628,9 @@
                     }
                     editorHost.roslynTooltip = () => hoverTooltip(async (view, pos) => {
                         const tooltip = await this.getInfoTipAsync(view.state.doc.toString(), pos);
+                        if (!tooltip) {
+                            return null;
+                        }
                         return {
                             pos: pos,
                             create() {
@@ -606,7 +707,7 @@
                         if (params.has("output")) {
                             this.output = params.get("output");
                         }
-                        if (this.outputLanguage === "CSharp") {
+                        if (this.output === "CSharp") {
                             if (params.has("csversion")) {
                                 this.outputLanguage = params.get("csversion");
                             }
@@ -624,7 +725,7 @@
                     if (this.language !== "IL") {
                         settings.version = this.inputLanguage;
                     }
-                    if (this.outputLanguage === "CSharp") {
+                    if (this.output === "CSharp") {
                         settings.csversion = this.outputLanguage;
                     }
                     const code = this.code;
@@ -636,6 +737,10 @@
             },
             mounted() {
                 this.loadSettings();
+                this.scheduleProcess(0);
+            },
+            beforeUnmount() {
+                clearTimeout(this.processTimer);
             }
         }).component("codemirror", {
             template: "#empty-template",
@@ -1049,14 +1154,104 @@
             white-space: pre-wrap;
         }
 
-        .loading-progress {
+        .editor-toolbar {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            column-gap: 12px;
+            min-height: 48px;
+        }
+
+        .toolbar-actions {
+            display: flex;
+            align-items: flex-end;
+            column-gap: 8px;
+            min-width: 0;
+        }
+
+        .select-field {
+            display: flex;
+            flex: 0 0 144px;
+            width: 144px;
+            min-width: 144px;
+            flex-direction: column;
+            row-gap: 2px;
+        }
+
+        .select-label {
+            overflow: hidden;
+            color: var(--neutral-foreground-hint, var(--neutral-foreground-rest));
+            font-size: 11px;
+            font-weight: 600;
+            line-height: 14px;
+            letter-spacing: 0.02em;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .toolbar-select {
+            box-sizing: border-box;
+            width: 144px;
+            min-width: 144px;
+            max-width: 144px;
+        }
+
+        .diagnostics {
+            box-sizing: border-box;
+            width: 100%;
+            padding: 0 12px;
+            overflow-x: hidden;
+            font-family: var(--font-monospace);
+        }
+
+        .diagnostics table {
+            width: 100%;
+            table-layout: fixed;
+        }
+
+        .diagnostics th,
+        .diagnostics td {
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            vertical-align: top;
+        }
+
+        .diagnostics .diagnostic-severity {
+            width: 20px;
+        }
+
+        .diagnostics .diagnostic-id {
+            width: 72px;
+        }
+
+        .diagnostics .diagnostic-location {
+            width: 150px;
+        }
+
+        .loading-progress-status {
+            position: absolute;
             bottom: 0;
-            width: var(--blazor-load-percentage, 0%);
+            left: 0;
+            right: 0;
+            z-index: 10;
+            box-sizing: border-box;
+            padding: 4px 8px 8px;
+            background: var(--neutral-layer-1);
+            color: var(--neutral-foreground-rest);
+            font-family: var(--font-monospace);
+            font-size: 12px;
+            text-align: center;
+        }
+
+        .loading-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0;
             background-color: var(--accent-fill-rest);
             height: calc((var(--stroke-width) * 3) * 1px);
-            transition: all 0.2s ease-in-out;
+            transition: width 0.1s linear;
             overflow: hidden;
-            position: absolute;
         }
 
         #vue-app fluent-select::part(listbox) {
@@ -1093,6 +1288,14 @@
                     width: 100%;
                     height: 50%;
                 }
+
+            .diagnostics .diagnostic-id {
+                width: 48px;
+            }
+
+            .diagnostics .diagnostic-location {
+                width: 96px;
+            }
         }
 
         #vue-app .hidden-icon,

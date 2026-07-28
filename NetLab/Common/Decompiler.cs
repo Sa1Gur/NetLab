@@ -15,15 +15,12 @@ namespace NetLab.Common;
 
 public static class Decompiler
 {
-    public static async ValueTask<string> CSharpDecompileAsync(CompilationResults streams, CSharpOutputOptions options)
+    public static ValueTask<string> CSharpDecompileAsync(CompilationResults streams, CSharpOutputOptions options)
     {
         using PEFile assemblyFile = new("", streams.AssemblyStream);
         PortablePdbDebugInfoProvider debugInfo = null;
         try
         {
-            //try { debugInfo = streams.SymbolStream != null ? new PortablePdbDebugInfoProvider(streams.SymbolStream) : null; }
-            //catch { }
-
             CSharpDecompiler decompiler =
                 new(assemblyFile,
                     new PreCachedAssemblyResolver(RoslynCodeSession.References),
@@ -36,10 +33,10 @@ public static class Decompiler
             SortTree(syntaxTree);
 
             StringBuilder code = new();
-            await using StringWriter codeWriter = new(code);
+            using StringWriter codeWriter = new(code);
             new ExtendedCSharpOutputVisitor(codeWriter, CreateFormattingOptions())
                 .VisitSyntaxTree(syntaxTree);
-            return code.ToString();
+            return ValueTask.FromResult(code.ToString());
         }
         finally
         {
@@ -78,23 +75,20 @@ public static class Decompiler
         return options;
     }
 
-    public static async ValueTask<string> ILDecompileAsync(CompilationResults streams)
+    public static ValueTask<string> ILDecompileAsync(CompilationResults streams)
     {
         using PEFile assemblyFile = new("", streams.AssemblyStream);
         PortablePdbDebugInfoProvider debugInfo = null;
         try
         {
-            //try { debugInfo = streams.SymbolStream != null ? new PortablePdbDebugInfoProvider(streams.SymbolStream) : null; }
-            //catch { }
-
             StringBuilder code = new();
-            await using StringWriter codeWriter = new(code);
+            using StringWriter codeWriter = new(code);
 
             PlainTextOutput output = new(codeWriter) { IndentationString = "    " };
             ReflectionDisassembler disassembler = new(output, default)
             {
                 DebugInfo = debugInfo,
-                ShowSequencePoints = true
+                ShowSequencePoints = false
             };
 
             disassembler.WriteAssemblyHeader(assemblyFile);
@@ -102,7 +96,7 @@ public static class Decompiler
 
             MetadataReader metadata = assemblyFile.Metadata;
             DecompileTypes(assemblyFile, output, disassembler, metadata);
-            return code.ToString();
+            return ValueTask.FromResult(code.ToString());
         }
         finally
         {

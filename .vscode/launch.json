@@ -9,7 +9,26 @@
             "type": "dotnet",
             "request": "launch",
             "projectPath": "${workspaceFolder}/NetLab/NetLab.csproj",
-            "launchConfigurationId": "TargetFramework=;https"
+            "launchConfigurationId": "TargetFramework=;https",
+            "serverReadyAction": {
+                "action": "openWithDebugProxy",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)",
+                "uriFormat": "%s/_framework/debug/ws-proxy?browser={browserInspectUri}",
+                "webRoot": "${workspaceFolder}/NetLab/wwwroot"
+            }
+        },
+        {
+            "name": "C#: NetLab [http]",
+            "type": "dotnet",
+            "request": "launch",
+            "projectPath": "${workspaceFolder}/NetLab/NetLab.csproj",
+            "launchConfigurationId": "TargetFramework=;http",
+            "serverReadyAction": {
+                "action": "openWithDebugProxy",
+                "pattern": "\\bNow listening on:\\s+(https?://\\S+)",
+                "uriFormat": "%s/_framework/debug/ws-proxy?browser={browserInspectUri}",
+                "webRoot": "${workspaceFolder}/NetLab/wwwroot"
+            }
         }
     ]
 }

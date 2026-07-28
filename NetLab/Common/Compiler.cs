@@ -22,6 +22,7 @@ public class Compiler(ILoggerFactory factory)
     public static OutputType[] OutputTypes { get; } = Enum.GetValues<OutputType>();
 
     private readonly ILogger<Compiler> _logger = factory.CreateLogger<Compiler>();
+    private bool _isBusy;
 
     private ICodeSession<ICodeSession> _codeSession;
     public ICodeSession<ICodeSession> CodeSession
@@ -83,8 +84,9 @@ public class Compiler(ILoggerFactory factory)
                     OutputType.Run => new RunOutputOptions(),
                     _ => throw new Exception("Invalid output type."),
                 };
+                bool wasConsole = outputType == OutputType.Run;
                 bool isConsole = value == OutputType.Run;
-                if (isConsole ^ (value == OutputType.Run))
+                if (wasConsole != isConsole)
                 {
                     UpdateCodeSession(isConsole);
                 }
@@ -140,10 +142,14 @@ public class Compiler(ILoggerFactory factory)
 
     public async ValueTask<List<Diagnostic>> GetDiagnosticsAsync(string code, CancellationToken cancellationToken = default)
     {
+        if (_isBusy)
+        {
+            return [];
+        }
+        _isBusy = true;
         List<Diagnostic> results = [];
         try
         {
-            bool isConsole = OutputType == OutputType.Run;
             results = await CodeSession.SetSourceText(code).GetDiagnosticsAsync(results, cancellationToken).ConfigureAwait(false);
             return results;
         }
@@ -162,21 +168,49 @@ public class Compiler(ILoggerFactory factory)
             results.Add(new Diagnostic(ex));
             _logger.LogError(ex, "Get diagnostics failed. {message} (0x{hResult:X})", ex.GetMessage(), ex.HResult);
         }
+        finally
+        {
+            _isBusy = false;
+        }
         return results;
     }
 
-    public ValueTask<IEnumerable<CompletionItem>> GetCompletionsAsync(string code, int position, CancellationToken cancellationToken = default)
+    public async ValueTask<IEnumerable<CompletionItem>> GetCompletionsAsync(string code, int position, CancellationToken cancellationToken = default)
     {
-        return InputOptions is RoslynOptions
-            ? CodeSession.SetSourceText(code).GetCompletionsAsync(position, cancellationToken)
-            : ValueTask.FromResult<IEnumerable<CompletionItem>>([]);
+        if (_isBusy)
+        {
+            return [];
+        }
+        _isBusy = true;
+        try
+        {
+            return InputOptions is RoslynOptions
+                ? await CodeSession.SetSourceText(code).GetCompletionsAsync(position, cancellationToken).ConfigureAwait(false)
+                : [];
+        }
+        finally
+        {
+            _isBusy = false;
+        }
     }
 
-    public ValueTask<InfoTipItem> GetInfoTipAsync(string code, int position, CancellationToken cancellationToken = default)
+    public async ValueTask<InfoTipItem> GetInfoTipAsync(string code, int position, CancellationToken cancellationToken = default)
     {
-        return InputOptions is RoslynOptions
-            ? CodeSession.SetSourceText(code).GetInfoTipAsync(position, cancellationToken)
-            : ValueTask.FromResult<InfoTipItem>(default);
+        if (_isBusy)
+        {
+            return default;
+        }
+        _isBusy = true;
+        try
+        {
+            return InputOptions is RoslynOptions
+                ? await CodeSession.SetSourceText(code).GetInfoTipAsync(position, cancellationToken).ConfigureAwait(false)
+                : default;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
     }
 
     private ValueTask<string> DecompileAsync(CompilationResults streams) => OutputOptions switch
@@ -235,6 +269,7 @@ public class Compiler(ILoggerFactory factory)
 
     public async ValueTask<CompileResult> ProcessAsync(string code, CancellationToken cancellationToken = default)
     {
+        _isBusy = true;
         try
         {
             (CompilationResults assemblyStream, List<Diagnostic> diagnostics) = await CompilateAsync(code, cancellationToken).ConfigureAwait(false);
@@ -256,8 +291,12 @@ public class Compiler(ILoggerFactory factory)
         catch (Exception ex)
         {
             _logger.LogError(ex, "Compilate or {type} assembly failed. {message} (0x{hResult:X})", OutputType == OutputType.Run ? "execute" : "decompile", ex.GetMessage(), ex.HResult);
+            return new CompileResult([new Diagnostic(ex)], null);
         }
-        return new CompileResult([], null);
+        finally
+        {
+            _isBusy = false;
+        }
     }
 }
 

@@ -6,6 +6,9 @@
     <TargetFramework>net10.0-browser</TargetFramework>
     <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
     <PlatformTarget>AnyCPU</PlatformTarget>
+    <RunAOTCompilation Condition="'$(Configuration)' == 'Release'">true</RunAOTCompilation>
+    <WasmStripILAfterAOT Condition="'$(Configuration)' == 'Release'">false</WasmStripILAfterAOT>
+    <WasmEmitSymbolMap Condition="'$(Configuration)' == 'Release'">true</WasmEmitSymbolMap>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +23,7 @@
 
   <ItemGroup>
     <TrimmerRootAssembly Include="NetLab" />
+    <TrimmerRootAssembly Include="ICSharpCode.Decompiler" />
     <TrimmerRootAssembly Include="System.Runtime" />
     <TrimmerRootAssembly Include="System.Console" />
     <TrimmerRootAssembly Include="System.Text.RegularExpressions" />
