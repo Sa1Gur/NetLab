@@ -110,12 +110,20 @@ public class Compiler(ILoggerFactory factory)
         }
     }
 
-    private async ValueTask<(CompilationResults streams, List<Diagnostic> diagnostics)> CompilateAsync(string code, CancellationToken cancellationToken = default)
+    private async ValueTask<(CompilationResults streams, List<Diagnostic> diagnostics)> CompilateAsync(
+        string code,
+        Func<string, ValueTask> reportProgress,
+        CancellationToken cancellationToken = default)
     {
         List<Diagnostic> results = [];
         try
         {
-            CompilationResults streams = await CodeSession.SetSourceText(code).Compile(results, cancellationToken).ConfigureAwait(false);
+            await ReportProgressAsync(reportProgress, "Creating Roslyn workspace...").ConfigureAwait(false);
+            ICodeSession<ICodeSession> session = CodeSession;
+            await ReportProgressAsync(reportProgress, "Updating source...").ConfigureAwait(false);
+            _ = session.SetSourceText(code);
+            await ReportProgressAsync(reportProgress, "Emitting assembly...").ConfigureAwait(false);
+            CompilationResults streams = await session.Compile(results, cancellationToken).ConfigureAwait(false);
             return (streams, results);
         }
         catch (AggregateException aex) when (aex.InnerExceptions?.Count > 1)
@@ -267,21 +275,29 @@ public class Compiler(ILoggerFactory factory)
         return results;
     }
 
-    public async ValueTask<CompileResult> ProcessAsync(string code, CancellationToken cancellationToken = default)
+    public ValueTask<CompileResult> ProcessAsync(string code, CancellationToken cancellationToken = default) =>
+        ProcessAsync(code, null, cancellationToken);
+
+    public async ValueTask<CompileResult> ProcessAsync(
+        string code,
+        Func<string, ValueTask> reportProgress,
+        CancellationToken cancellationToken = default)
     {
         _isBusy = true;
         try
         {
-            (CompilationResults assemblyStream, List<Diagnostic> diagnostics) = await CompilateAsync(code, cancellationToken).ConfigureAwait(false);
+            (CompilationResults assemblyStream, List<Diagnostic> diagnostics) = await CompilateAsync(code, reportProgress, cancellationToken).ConfigureAwait(false);
             if (assemblyStream != null)
             {
                 switch (OutputType)
                 {
                     case OutputType.CSharp
                         or OutputType.IL:
+                        await ReportProgressAsync(reportProgress, "Decompiling...").ConfigureAwait(false);
                         string results = await DecompileAsync(assemblyStream).ConfigureAwait(false);
                         return new CompileResult(diagnostics, results);
                     case OutputType.Run:
+                        await ReportProgressAsync(reportProgress, "Running program...").ConfigureAwait(false);
                         List<string> outputs = await ExecuteAsync(assemblyStream).ConfigureAwait(false);
                         return new CompileResult(diagnostics, null, outputs);
                 }
@@ -298,6 +314,9 @@ public class Compiler(ILoggerFactory factory)
             _isBusy = false;
         }
     }
+
+    private static ValueTask ReportProgressAsync(Func<string, ValueTask> reportProgress, string stage) =>
+        reportProgress?.Invoke(stage) ?? ValueTask.CompletedTask;
 }
 
 public record struct CompileResult(List<Diagnostic> Diagnostics, string Decompiled, params List<string> Outputs);

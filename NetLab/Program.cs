@@ -10,22 +10,30 @@ using System.Threading.Tasks;
 
 WebAssemblyHost current = WebAssemblyHostBuilder.CreateDefault(args).Build();
 Compiler = new Compiler(current.Services.GetRequiredService<ILoggerFactory>());
-await current.Services.GetRequiredService<IJSRuntime>()
-    .InvokeVoidAsync("initNetLab", DotNetObjectReference.Create(new Program()));
+JSRuntime = current.Services.GetRequiredService<IJSRuntime>();
+await JSRuntime.InvokeVoidAsync("initNetLab", DotNetObjectReference.Create(new Program()));
 await current.RunAsync();
 
 public partial class Program
 {
     private static Compiler Compiler { get; set; }
+    private static IJSRuntime JSRuntime { get; set; }
 
     [JSInvokable]
     public Task InitAsync(string baseUrl) => RoslynCodeSession.InitAsync(baseUrl).AsTask();
 
     [JSInvokable("InitWithUrlsAsync")]
-    public Task InitAsync(string baseUrl, IDictionary<string, string> assemblyUrls) => RoslynCodeSession.InitAsync(baseUrl, assemblyUrls).AsTask();
+    public Task InitAsync(string baseUrl, IDictionary<string, string> assemblyUrls) =>
+        RoslynCodeSession.InitAsync(
+            baseUrl,
+            assemblyUrls,
+            (name, completed, total) => JSRuntime.InvokeVoidAsync("updateNetLabProgress", name, completed, total)).AsTask();
 
     [JSInvokable]
-    public Task<CompileResult> ProcessAsync(string code) => Compiler.ProcessAsync(code).AsTask();
+    public Task<CompileResult> ProcessAsync(string code) =>
+        Compiler.ProcessAsync(
+            code,
+            stage => JSRuntime.InvokeVoidAsync("updateNetLabStage", stage)).AsTask();
 
     [JSInvokable]
     public Task<List<Diagnostic>> GetDiagnosticsAsync(string code) => Compiler.GetDiagnosticsAsync(code).AsTask();

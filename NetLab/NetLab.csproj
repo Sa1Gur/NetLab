@@ -9,7 +9,38 @@
     <RunAOTCompilation Condition="'$(Configuration)' == 'Release'">true</RunAOTCompilation>
     <WasmStripILAfterAOT Condition="'$(Configuration)' == 'Release'">false</WasmStripILAfterAOT>
     <WasmEmitSymbolMap Condition="'$(Configuration)' == 'Release'">true</WasmEmitSymbolMap>
+    <SatelliteResourceLanguages Condition="'$(Configuration)' == 'Debug'">en</SatelliteResourceLanguages>
+    <WasmDebugLevel Condition="'$(Configuration)' == 'Debug'">1</WasmDebugLevel>
   </PropertyGroup>
+
+  <!-- Mono's WASM interpreter executes the recursive reference IL for this runtime
+       intrinsic. Patch only the Debug build's private CoreLib copy so Roslyn emit
+       works without disabling the managed debugger through AOT. -->
+  <Target Name="BuildCoreLibPatcher" BeforeTargets="PatchDebugCoreLib" Condition="'$(Configuration)' == 'Debug' and '$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup>
+      <_CoreLibPatcherProject>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '..', 'tools', 'CoreLibPatcher', 'CoreLibPatcher.csproj'))</_CoreLibPatcherProject>
+      <_CoreLibPatcherAssembly>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '..', 'tools', 'CoreLibPatcher', 'bin', '$(Configuration)', 'net10.0', 'CoreLibPatcher.dll'))</_CoreLibPatcherAssembly>
+    </PropertyGroup>
+    <MSBuild Projects="$(_CoreLibPatcherProject)" Targets="Build" Properties="Configuration=$(Configuration)" BuildInParallel="false" />
+  </Target>
+
+  <Target Name="PatchDebugCoreLib" AfterTargets="ResolveReferences" BeforeTargets="_GatherWasmFilesToBuild;_ResolveWasmOutputs" Condition="'$(Configuration)' == 'Debug' and '$(DesignTimeBuild)' != 'true'">
+    <PropertyGroup>
+      <_PatchedCoreLibDirectory>$([MSBuild]::NormalizeDirectory('$(IntermediateOutputPath)', 'patched-runtime'))</_PatchedCoreLibDirectory>
+      <_PatchedCoreLibPath>$(_PatchedCoreLibDirectory)System.Private.CoreLib.dll</_PatchedCoreLibPath>
+    </PropertyGroup>
+    <ItemGroup>
+      <_OriginalCoreLib Include="@(ReferenceCopyLocalPaths)" Condition="'%(ReferenceCopyLocalPaths.FileName)%(ReferenceCopyLocalPaths.Extension)' == 'System.Private.CoreLib.dll'" />
+    </ItemGroup>
+    <Error Condition="'@(_OriginalCoreLib)' == ''" Text="System.Private.CoreLib.dll was not found in ReferenceCopyLocalPaths." />
+    <MakeDir Directories="$(_PatchedCoreLibDirectory)" />
+    <Copy SourceFiles="@(_OriginalCoreLib)" DestinationFiles="$(_PatchedCoreLibPath)" />
+    <Exec Command="dotnet &quot;$(_CoreLibPatcherAssembly)&quot; &quot;$(_PatchedCoreLibPath)&quot;" />
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Remove="@(_OriginalCoreLib)" />
+      <ReferenceCopyLocalPaths Include="$(_PatchedCoreLibPath)" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="ICSharpCode.Decompiler" Version="10.1.0.8386" />

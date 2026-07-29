@@ -1,11 +1,11 @@
 ﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeActions;
-using Microsoft.CodeAnalysis.CodeFixes;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Completion;
-using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Emit;
 using Microsoft.CodeAnalysis.QuickInfo;
 using Microsoft.CodeAnalysis.Text;
+using Microsoft.CodeAnalysis.VisualBasic;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.JSInterop;
@@ -16,7 +16,6 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
-using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -33,7 +32,6 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
     private static string _baseUrl;
     private static IDictionary<string, string> _assemblyUrls;
 
-    private readonly Dictionary<string, List<CodeFixProvider>> _providers;
     private readonly RoslynOptions _options;
     private readonly string _language;
     private readonly bool _isConsole;
@@ -139,12 +137,6 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
         _ = Workspace.TryApplyChanges(solution);
         Workspace.OpenDocument(docId);
         _currentDocument = Workspace.CurrentSolution.GetDocument(docId);
-        GetAnalyzers(_language switch
-        {
-            LanguageNames.CSharp => "Microsoft.CodeAnalysis.CSharp.Features",
-            LanguageNames.VisualBasic => "Microsoft.CodeAnalysis.VisualBasic.Features",
-            _ => throw new NotSupportedException($"Language '{_language}' is not supported.")
-        }, _language, out _, out _providers);
     }
 
     public static async ValueTask InitAsync(string baseUrl)
@@ -161,13 +153,19 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
         }
     }
 
-    public static async ValueTask InitAsync(string baseUrl, IDictionary<string, string> assemblyUrls)
+    public static ValueTask InitAsync(string baseUrl, IDictionary<string, string> assemblyUrls) =>
+        InitAsync(baseUrl, assemblyUrls, null);
+
+    public static async ValueTask InitAsync(
+        string baseUrl,
+        IDictionary<string, string> assemblyUrls,
+        Func<string, int, int, ValueTask> reportProgress)
     {
         _baseUrl = baseUrl;
         _assemblyUrls = assemblyUrls;
         if (References?.Count is not > 0)
         {
-            References = await GetMetadataReferencesAsync(
+            References = await GetMetadataReferencesAsync(reportProgress,
                 "System.Private.CoreLib",
                 "System.Runtime",
                 "System.Console",
@@ -212,7 +210,7 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
 
     public async ValueTask<T> GetDiagnosticsAsync<T>(T results, CancellationToken cancellationToken = default) where T : ICollection<Diagnostic>
     {
-        Compilation compilation = await CurrentDocument.Project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
+        Compilation compilation = CreateCompilation(cancellationToken);
         // AnalyzerDriver checks hidden source regions through Roslyn's generic
         // LineDirectiveMap implementation, which is not safe under WASM AOT.
         ImmutableArray<RoslynDiagnostic> diagnostics = compilation.GetDiagnostics(cancellationToken);
@@ -224,33 +222,6 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
             results.Add(new Diagnostic(diagnostic));
         }
         return results;
-    }
-
-    private async ValueTask<List<RoslynCodeAction>> GetCodeActionsAsync(RoslynDiagnostic diagnostic, CancellationToken cancellationToken = default)
-    {
-        List<RoslynCodeAction> codeActions = [];
-        CodeFixContext context = new(CurrentDocument, diagnostic, (x, _) => codeActions.Add(x), cancellationToken);
-        if (_providers.TryGetValue(diagnostic.Id, out List<CodeFixProvider> providers))
-        {
-            for (int i = providers.Count; --i >= 0;)
-            {
-                CodeFixProvider provider = providers[i];
-                try
-                {
-                    await provider.RegisterCodeFixesAsync(context).ConfigureAwait(false);
-                }
-                catch (TypeInitializationException ex)
-                {
-                    _logger.LogError(ex, "Not supports provider '{provider}' for diagnostic '{diagnosticId}'.", provider.GetType().Name, diagnostic.Id);
-                    _ = providers.Remove(provider);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error while registering code fixes for provider '{provider}' with diagnostic '{diagnosticId}'.", provider.GetType().Name, diagnostic.Id);
-                }
-            }
-        }
-        return codeActions;
     }
 
     private bool ShouldTriggerCompletions(int position) => ShouldTriggerCompletions(position, '\0', CharacterOperation.None);
@@ -309,7 +280,7 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
     public async ValueTask<CompilationResults> Compile(ICollection<Diagnostic> results, CancellationToken cancellationToken = default)
     {
         MemoryStream assemblyStream = new();
-        Compilation compilation = await CurrentDocument.Project.GetCompilationAsync(cancellationToken).ConfigureAwait(false);
+        Compilation compilation = CreateCompilation(cancellationToken);
         // The decompilers do not consume PDB data. Avoiding PDB emission also keeps
         // Roslyn out of its generic line-directive map path, which is not safe under WASM AOT.
         EmitResult emitResult = compilation.Emit(assemblyStream, cancellationToken: cancellationToken);
@@ -332,12 +303,54 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
 
     public RoslynCodeSession WithIsConsole(bool isConsole) => new(_code, _options, isConsole, _logger);
 
-    private static async ValueTask<List<MetadataReference>> GetMetadataReferencesAsync(params string[] assemblies)
+    private Compilation CreateCompilation(CancellationToken cancellationToken)
+    {
+        _options.GetOptions(_isConsole, out CompilationOptions compilationOptions, out ParseOptions parseOptions);
+        SyntaxTree syntaxTree = _language switch
+        {
+            LanguageNames.CSharp => CSharpSyntaxTree.ParseText(
+                SourceText,
+                (CSharpParseOptions)parseOptions,
+                cancellationToken: cancellationToken),
+            LanguageNames.VisualBasic => VisualBasicSyntaxTree.ParseText(
+                SourceText,
+                (VisualBasicParseOptions)parseOptions,
+                cancellationToken: cancellationToken),
+            _ => throw new NotSupportedException($"Language '{_language}' is not supported.")
+        };
+
+        return _language switch
+        {
+            LanguageNames.CSharp => CSharpCompilation.Create(
+                "NetLab",
+                [syntaxTree],
+                References,
+                (CSharpCompilationOptions)compilationOptions),
+            LanguageNames.VisualBasic => VisualBasicCompilation.Create(
+                "NetLab",
+                [syntaxTree],
+                References,
+                (VisualBasicCompilationOptions)compilationOptions),
+            _ => throw new NotSupportedException($"Language '{_language}' is not supported.")
+        };
+    }
+
+    private static ValueTask<List<MetadataReference>> GetMetadataReferencesAsync(params string[] assemblies) =>
+        GetMetadataReferencesAsync(null, assemblies);
+
+    private static async ValueTask<List<MetadataReference>> GetMetadataReferencesAsync(
+        Func<string, int, int, ValueTask> reportProgress,
+        params string[] assemblies)
     {
         using HttpClient client = new() { BaseAddress = new Uri(_baseUrl) };
         List<MetadataReference> references = new(assemblies.Length);
-        foreach (string assembly in assemblies)
+        for (int index = 0; index < assemblies.Length; index++)
         {
+            string assembly = assemblies[index];
+            if (reportProgress is not null)
+            {
+                await reportProgress(assembly, index, assemblies.Length).ConfigureAwait(false);
+            }
             string path = _assemblyUrls is not null && _assemblyUrls.TryGetValue(assembly, out string url) && !string.IsNullOrEmpty(url)
                 ? url
                 : $"{assembly}.wasm";
@@ -348,42 +361,13 @@ public sealed class RoslynCodeSession : ICodeSession<RoslynCodeSession>
             byte[] array = await WebcilConverterUtil.ConvertFromWebcilAsync(buffered).ConfigureAwait(false);
             references.Add(MetadataReference.CreateFromImage(array));
         }
+        if (reportProgress is not null)
+        {
+            await reportProgress(null, assemblies.Length, assemblies.Length).ConfigureAwait(false);
+        }
         return references;
     }
 
-    private static void GetAnalyzers(string assemblyName, string language, out IEnumerable<DiagnosticAnalyzer> analyzers, out Dictionary<string, List<CodeFixProvider>> providers)
-    {
-        Type[] types = Assembly.Load(new AssemblyName(assemblyName)).GetTypes();
-
-        analyzers = types.Where(x => x.IsSubclassOf(typeof(DiagnosticAnalyzer)) && x is { IsAbstract: false } && x.GetCustomAttributes(typeof(DiagnosticAnalyzerAttribute), true).OfType<DiagnosticAnalyzerAttribute>().Any(x => x.Languages.Contains(language)))
-                         .Select(Activator.CreateInstance)
-                         .OfType<DiagnosticAnalyzer>();
-
-        IEnumerable<CodeFixProvider> codeFixProvider =
-            types.Where(x => x.IsSubclassOf(typeof(CodeFixProvider)) && x is { IsAbstract: false } && x.IsDefined(typeof(ExportCodeFixProviderAttribute)))
-                 .Select(Activator.CreateInstance)
-                 .OfType<CodeFixProvider>();
-
-        providers = [];
-        foreach (CodeFixProvider provider in codeFixProvider)
-        {
-            foreach (string id in provider.FixableDiagnosticIds)
-            {
-                if (!providers.TryGetValue(id, out List<CodeFixProvider> list))
-                {
-                    list = [];
-                    providers.Add(id, list);
-                }
-                list.Add(provider);
-            }
-        }
-    }
-
-    private class PreloadedAnalyzerAssemblyLoader(Assembly assembly) : IAnalyzerAssemblyLoader
-    {
-        public Assembly LoadFromPath(string fullPath) => assembly;
-        void IAnalyzerAssemblyLoader.AddDependencyLocation(string fullPath) { }
-    }
 }
 
 public sealed class ILCodeSession(string code, bool isConsole) : ICodeSession<ILCodeSession>

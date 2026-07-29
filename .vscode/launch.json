@@ -1,33 +1,21 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "1.0.0",
     "configurations": [
         {
-            "name": "C#: NetLab [https]",
-            "type": "dotnet",
+            "name": "NetLab: WASM Managed Debug",
+            "type": "blazorwasm",
             "request": "launch",
+            "cwd": "${workspaceFolder}/NetLab",
             "projectPath": "${workspaceFolder}/NetLab/NetLab.csproj",
-            "launchConfigurationId": "TargetFramework=;https",
-            "serverReadyAction": {
-                "action": "openWithDebugProxy",
-                "pattern": "\\bNow listening on:\\s+(https?://\\S+)",
-                "uriFormat": "%s/_framework/debug/ws-proxy?browser={browserInspectUri}",
-                "webRoot": "${workspaceFolder}/NetLab/wwwroot"
-            }
-        },
-        {
-            "name": "C#: NetLab [http]",
-            "type": "dotnet",
-            "request": "launch",
-            "projectPath": "${workspaceFolder}/NetLab/NetLab.csproj",
-            "launchConfigurationId": "TargetFramework=;http",
-            "serverReadyAction": {
-                "action": "openWithDebugProxy",
-                "pattern": "\\bNow listening on:\\s+(https?://\\S+)",
-                "uriFormat": "%s/_framework/debug/ws-proxy?browser={browserInspectUri}",
-                "webRoot": "${workspaceFolder}/NetLab/wwwroot"
+            "url": "http://localhost:5282",
+            "browser": "chrome",
+            "runtimeExecutable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "userDataDir": "/tmp/netlab-vscode-managed-profile-v3",
+            "webRoot": "${workspaceFolder}/NetLab/wwwroot",
+            "timeout": 120000,
+            "trace": true,
+            "dotNetConfig": {
+                "justMyCode": true
             }
         }
     ]

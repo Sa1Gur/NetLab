@@ -52,19 +52,15 @@
     <script type="module">
         import {
             provideFluentDesignSystem,
-            fluentButton,
             fluentOption,
             fluentSelect,
-            fluentProgressRing,
             baseLayerLuminance,
             StandardLuminance
         } from "@fluentui/web-components";
         provideFluentDesignSystem()
             .register(
-                fluentButton(),
                 fluentOption(),
-                fluentSelect(),
-                fluentProgressRing()
+                fluentSelect()
             );
         const scheme = matchMedia("(prefers-color-scheme: dark)");
         if (typeof scheme !== "undefined") {
@@ -114,9 +110,6 @@
                         </fluent-select>
                     </div>
                     <div class="toolbar-actions">
-                        <fluent-button v-if="!isInitDotnet" @click="initLinterAsync" :disabled="loading">
-                            Init Linter
-                        </fluent-button>
                         <div v-if="outputLanguages.length" class="select-field"
                              title="Maximum C# syntax version the decompiler may use. This does not change the compiled IL.">
                             <span class="select-label">Decompiler syntax</span>
@@ -157,9 +150,10 @@
                 </div>
             </div>
         </div>
-        <div class="loading-progress-status" v-if="!isInitDotnet">
+        <div class="loading-progress-status" v-if="loading || !isInitDotnet">
             <span>{{ loadProgressText || message }}</span>
-            <div class="loading-progress" :style="{ width: loadProgress + '%' }"></div>
+            <div class="loading-progress" :class="{ indeterminate: progressIndeterminate }"
+                 :style="progressIndeterminate ? null : { width: loadProgress + '%' }"></div>
         </div>
     </div>
 
@@ -199,6 +193,7 @@
                     compilerInitPromise: null,
                     loadProgress: 0,
                     loadProgressText: "",
+                    progressIndeterminate: true,
                     loading: false,
                     message: "Process",
                     processTimer: null,
@@ -386,22 +381,6 @@
                         console.warn(e);
                     }
                 },
-                async initLinterAsync() {
-                    try {
-                        this.loading = true;
-                        const message = this.message;
-                        this.message = "Init Linter...";
-                        await (this.language === "IL" ? this.initDotNetAsync() : this.initCompilerAsync());
-                        this.initEditer();
-                        this.message = message;
-                    }
-                    catch (e) {
-                        console.warn(e);
-                    }
-                    finally {
-                        this.loading = false;
-                    }
-                },
                 async initDotNetAsync() {
                     if (this.isInitDotnet) {
                         return;
@@ -410,6 +389,9 @@
                         const message = this.message;
                         this.message = "Loading .NET...";
                         this.dotNetInitPromise = (async () => {
+                            this.progressIndeterminate = true;
+                            this.loadProgress = 0;
+                            this.loadProgressText = "Starting .NET...";
                             await Blazor.start({
                                 loadBootResource: (type, name, defaultUri, integrity) =>
                                     type === "dotnetwasm"
@@ -419,7 +401,7 @@
                             while (!window.netLabRef) {
                                 await new Promise(r => setTimeout(r, 50));
                             }
-                            this.loadProgress = 100;
+                            this.loadProgress = 0;
                             this.loadProgressText = "";
                             this.isInitDotnet = true;
                         })().finally(() => {
@@ -443,6 +425,7 @@
                     let loaded = 0;
                     const formatSize = bytes => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
                     const updateProgress = () => {
+                        this.progressIndeterminate = total === 0;
                         this.loadProgress = total ? Math.min(100, loaded / total * 100) : 0;
                         this.loadProgressText = total
                             ? `Loading ${name}: ${formatSize(loaded)} / ${formatSize(total)} (${Math.floor(this.loadProgress)}%)`
@@ -457,7 +440,8 @@
                             controller.enqueue(chunk);
                         },
                         flush: () => {
-                            this.loadProgress = 100;
+                            this.progressIndeterminate = true;
+                            this.loadProgress = 0;
                             this.loadProgressText = "Starting .NET...";
                         }
                     }));
@@ -475,6 +459,9 @@
                     if (!this.compilerInitPromise) {
                         const message = this.message;
                         this.message = "Downloading references...";
+                        this.progressIndeterminate = true;
+                        this.loadProgress = 0;
+                        this.loadProgressText = "Preparing compiler references...";
                         this.compilerInitPromise = (async () => {
                             await this.initDotNetAsync();
                             const baseUrl = new URL("_framework/", document.baseURI);
@@ -483,6 +470,9 @@
                             this.isInitCompiler = true;
                         })().finally(() => {
                             this.message = message;
+                            this.progressIndeterminate = true;
+                            this.loadProgress = 0;
+                            this.loadProgressText = "";
                             if (!this.isInitCompiler) {
                                 this.compilerInitPromise = null;
                             }
@@ -736,11 +726,26 @@
                 }
             },
             mounted() {
+                window.updateNetLabStage = stage => {
+                    this.progressIndeterminate = true;
+                    this.loadProgress = 0;
+                    this.loadProgressText = "";
+                    this.message = stage;
+                };
+                window.updateNetLabProgress = (name, completed, total) => {
+                    this.progressIndeterminate = false;
+                    this.loadProgress = total ? Math.min(100, completed / total * 100) : 0;
+                    this.loadProgressText = completed < total
+                        ? `Loading compiler reference ${completed + 1}/${total}: ${name}`
+                        : "Preparing compiler...";
+                };
                 this.loadSettings();
                 this.scheduleProcess(0);
             },
             beforeUnmount() {
                 clearTimeout(this.processTimer);
+                delete window.updateNetLabStage;
+                delete window.updateNetLabProgress;
             }
         }).component("codemirror", {
             template: "#empty-template",
@@ -1252,6 +1257,21 @@
             height: calc((var(--stroke-width) * 3) * 1px);
             transition: width 0.1s linear;
             overflow: hidden;
+        }
+
+        .loading-progress.indeterminate {
+            width: 30%;
+            animation: loading-progress-indeterminate 1.2s ease-in-out infinite;
+        }
+
+        @keyframes loading-progress-indeterminate {
+            from {
+                transform: translateX(-110%);
+            }
+
+            to {
+                transform: translateX(440%);
+            }
         }
 
         #vue-app fluent-select::part(listbox) {

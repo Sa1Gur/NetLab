@@ -8,6 +8,8 @@
             "args": [
                 "build",
                 "${workspaceFolder}/NetLab/NetLab.csproj",
+                "--configuration",
+                "Debug",
                 "/property:GenerateFullPaths=true",
                 "/consoleloggerparameters:NoSummary"
             ],
